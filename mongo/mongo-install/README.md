@@ -14,3 +14,15 @@
 ---
 
 ### Ответ
+
+```mongodb
+db.createUser({
+    user: "admin",
+    pwd: "singularity",
+    roles: [{ role: "root", db: "admin" }]
+})
+```
+
+```sh
+sudo systemctl restart mongod
+```

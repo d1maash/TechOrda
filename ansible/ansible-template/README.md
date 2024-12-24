@@ -132,3 +132,113 @@ bash checker-template.sh
 ---
 
 ### Ответ
+
+#### server.conf.j2
+
+```nginx
+server {
+    listen {{ server_port }};
+    server_name {{ server_name }};
+
+    {% for location in locations %}
+    location {{ location.path }} {
+        return {{ location.status_code }} '{{ location.message }}';
+    }
+    {% endfor %}
+}
+```
+#### playbook.yaml
+
+```yaml
+- name: Configure NGINX with Templates
+  hosts: lb
+  become: yes
+  vars:
+    nginx_main_conf: /etc/nginx/nginx.conf
+    default_conf: /etc/nginx/conf.d/default.conf
+
+  handlers:
+    - name: reload-nginx
+      service:
+        name: nginx
+        state: reloaded
+
+  tasks:
+    - name: Install NGINX
+      apt:
+        name: nginx
+        state: present
+        update_cache: yes
+
+    - name: Copy main NGINX configuration file
+      copy:
+        src: ./nginx.conf
+        dest: "{{ nginx_main_conf }}"
+      notify: reload-nginx
+
+    - name: Remove default configuration file
+      file:
+        path: "{{ default_conf }}"
+        state: absent
+      notify: reload-nginx
+
+    - name: Generate server block configurations
+      template:
+        src: ./server.conf.j2
+        dest: /etc/nginx/conf.d/{{ item.server_name }}.conf
+      loop:
+        - server_port: 7070
+          server_name: jmart-ansible.kz
+          locations:
+            - path: /main
+              status_code: 200
+              message: Добро пожаловать на JMart!
+            - path: /profile
+              status_code: 201
+              message: Это страница профиля.
+
+        - server_port: 8080
+          server_name: jusan-ansible.kz
+          locations:
+            - path: /
+              status_code: 200
+              message: Добро пожаловать на Jusan Bank!
+            - path: /account
+              status_code: 202
+              message: Здесь ваш банковский счет!
+
+        - server_port: 9090
+          server_name: invest-ansible.kz
+          locations:
+            - path: /home
+              status_code: 200
+              message: Добро пожаловать на Jusan Invest!
+            - path: /user
+              status_code: 203
+              message: Это страница с вашим брокерским счетом.
+      notify: reload-nginx
+```
+#### docker-compose.yaml
+```yaml
+services:
+  local-vps-22:
+    image: atlekbai/local-vps:latest
+    container_name: local-vps-22
+    ports:
+      - "22:22"
+      - "80:80"
+      - "7070:7070"
+      - "8080:8080"
+      - "8888:8888"
+      - "9090:9090"
+    restart: always
+    command: "22"
+```
+
+#### verification
+
+```bash
+curl http://127.0.0.1:7070/main
+curl http://127.0.0.1:8080/account
+curl http://127.0.0.1:9090/user
+```

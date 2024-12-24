@@ -105,3 +105,107 @@ bash checker-apps.sh
 ---
 
 ### Ответ
+
+
+#### main.yaml
+
+```yaml
+# roles/nginx/tasks/main.yml
+---
+- name: Install Nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+
+# roles/nginx/handlers/main.yml
+---
+- name: reload-nginx
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+
+# roles/nginx/meta/main.yml
+---
+galaxy_info:
+  role_name: nginx
+  description: "Role to install and manage Nginx"
+
+```
+
+```yaml
+# roles/nginx-configuration/tasks/main.yml
+---
+- name: Copy nginx.conf
+  ansible.builtin.copy:
+    src: nginx.conf
+    dest: /etc/nginx/nginx.conf
+  notify: reload-nginx
+
+- name: Remove default.conf
+  ansible.builtin.file:
+    path: /etc/nginx/conf.d/default.conf
+    state: absent
+
+- name: Create server blocks from templates
+  ansible.builtin.template:
+    src: server.conf.j2
+    dest: /etc/nginx/conf.d/{{ item.server_name }}.conf
+  loop:
+    - server_port: 80
+      server_name: jusan-apps.kz
+      apps:
+        - local-vps-23:9090
+        - local-vps-24:9090
+  notify: reload-nginx
+
+# roles/nginx-configuration/meta/main.yml
+---
+galaxy_info:
+  role_name: nginx-configuration
+  description: "Role to configure Nginx with custom server blocks"
+
+```
+
+
+```yaml
+# roles/application/tasks/main.yml
+---
+- name: Download API binary
+  ansible.builtin.get_url:
+    url: https://github.com/jusan-singularity/track-devops-systemd-api/releases/download/v0.1/api
+    dest: /tmp/api
+    mode: '0755'
+
+- name: Deploy API service
+  ansible.builtin.copy:
+    src: api.service
+    dest: /etc/systemd/system/api.service
+
+- name: Enable and start API service
+  ansible.builtin.systemd:
+    name: api
+    enabled: true
+    state: started
+
+# roles/application/meta/main.yml
+---
+galaxy_info:
+  role_name: application
+  description: "Role to manage the application service"
+
+```
+
+
+```yaml
+---
+- hosts: lb
+  become: true
+  roles:
+    - nginx
+    - nginx-configuration
+
+- hosts: app
+  become: true
+  roles:
+    - application
+```

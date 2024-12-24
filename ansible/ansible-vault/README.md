@@ -123,3 +123,64 @@ bash checker-vault.sh
 ---
 
 ### Ответ
+
+#### nginx-secret-token.yaml
+
+```yaml
+mkdir vars
+echo -e "---\nsecret_token: \"Jusan Singularity\"" > vars/nginx_secret_token.yaml
+ansible-vault encrypt vars/nginx_secret_token.yaml --vault-password-file=<(echo "kazakhstan2022")
+```
+
+#### server_secret.conf.j2
+```nginx
+server {
+    listen {{ server_port }};
+    server_name {{ server_name }};
+
+    location / {
+        return 200 "{{ secret }}";
+    }
+}
+
+```
+
+#### main.yaml
+
+```yaml
+- name: Generate server block with secret
+  ansible.builtin.template:
+    src: server_secret.conf.j2
+    dest: /etc/nginx/conf.d/{{ server_name }}.conf
+  vars:
+    server_port: 9090
+    server_name: jusan-secret.kz
+    secret: "{{ secret_token }}"
+  notify: reload-nginx
+```
+
+#### playbook.yaml
+
+```yaml
+
+---
+- hosts: lb
+  become: true
+
+  vars_files:
+    - vars/nginx_secret_token.yaml
+
+  roles:
+    - nginx
+    - nginx-configuration
+
+- hosts: app
+  become: true
+  roles:
+    - application
+
+```
+
+```bash
+ansible-playbook playbook.yaml --vault-password-file=<(echo "kazakhstan2022")
+```

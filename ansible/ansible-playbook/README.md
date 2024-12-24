@@ -26,3 +26,53 @@
 ---
 
 ### Ответ
+
+#### Setup.sh
+```bash
+#!/bin/bash
+
+docker run -d \
+  --name local-vps-22 \
+  -p 22:22 \
+  -p 80:80 \
+  atlekbai/local-vps
+sleep 5
+
+docker exec -i local-vps-22 bash -c "mkdir -p /root/.ssh && chmod 700 /root/.ssh"
+docker cp ~/.ssh/id_rsa.pub local-vps-22:/root/.ssh/authorized_keys
+docker exec -i local-vps-22 bash -c "chmod 600 /root/.ssh/authorized_keys"
+
+ssh -o StrictHostKeyChecking=no root@127.0.0.1 exit
+
+echo "Setup complete. You can now SSH into the container."
+```
+
+#### hosts.ini
+```ini
+[lb]
+127.0.0.1 ansible_connection=ssh ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa
+```
+
+#### playbook.yml
+```yaml
+- name: Configure Load Balancer
+  hosts: lb
+  become: yes
+  tasks:
+    - name: Install nginx
+      apt:
+        name: nginx
+        state: present
+        update_cache: yes
+
+    - name: Ensure nginx is started and enabled
+      service:
+        name: nginx
+        state: started
+        enabled: yes
+```
+#### Run playbook
+
+```bash
+ansible-playbook -i hosts.ini playbook.yml
+```

@@ -186,3 +186,175 @@ bash checker-apps.sh
 ---
 
 ### Ответ
+
+#### hosts.ini
+
+```ini
+[lb]
+127.0.0.1 ansible_port=22 ansible_user=root
+
+[app]
+app1 ansible_host=127.0.0.1 ansible_port=23 ansible_user=root
+app2 ansible_host=127.0.0.1 ansible_port=24 ansible_user=root
+
+```
+
+#### app.conf.j2
+```nginx
+upstream app {
+    {% for app in apps %}
+    server {{ app }};
+    {% endfor %}
+}
+
+server {
+    listen {{ server_port }};
+    server_name {{ server_name }};
+    
+    location / {
+        proxy_pass http://app;
+        add_header X-Upstream $upstream_addr;
+    }
+}
+```
+
+
+#### playbook.yaml
+
+```yaml
+- name: Configure Load Balancer and Apps
+  hosts: lb,app
+  become: yes
+
+  vars:
+    nginx_main_conf: /etc/nginx/nginx.conf
+    default_conf: /etc/nginx/conf.d/default.conf
+    app_service_path: /etc/systemd/system/api.service
+    app_binary_path: /tmp/api
+
+  handlers:
+    - name: nginx-reload
+      service:
+        name: nginx
+        state: reloaded
+
+    - name: restart-api
+      systemd:
+        name: api
+        state: restarted
+        enabled: yes
+
+  tasks:
+    - name: Install NGINX (lb)
+      apt:
+        name: nginx
+        state: present
+        update_cache: yes
+      when: "'lb' in group_names"
+
+    - name: Copy main NGINX configuration file (lb)
+      copy:
+        src: nginx.conf
+        dest: "{{ nginx_main_conf }}"
+      notify: nginx-reload
+      when: "'lb' in group_names"
+
+    - name: Remove default NGINX configuration (lb)
+      file:
+        path: "{{ default_conf }}"
+        state: absent
+      notify: nginx-reload
+      when: "'lb' in group_names"
+
+    - name: Generate Load Balancer Configuration (lb)
+      template:
+        src: app.conf.j2
+        dest: /etc/nginx/conf.d/{{ server_name }}.conf
+      vars:
+        server_port: 80
+        server_name: jusan-apps.kz
+        apps:
+          - local-vps-23:9090
+          - local-vps-24:9090
+      notify: nginx-reload
+      when: "'lb' in group_names"
+
+    - name: Download application binary (app)
+      get_url:
+        url: https://github.com/jusan-singularity/track-devops-systemd-api/releases/download/v0.1/api
+        dest: "{{ app_binary_path }}"
+        mode: '0755'
+      when: "'app' in group_names"
+
+    - name: Copy API service file (app)
+      copy:
+        src: api.service
+        dest: "{{ app_service_path }}"
+      notify: restart-api
+      when: "'app' in group_names"
+
+    - name: Start and enable API service (app)
+      systemd:
+        name: api
+        state: started
+        enabled: yes
+      when: "'app' in group_names"
+```
+#### api.service
+```
+[Unit]
+Description=API Service
+After=network.target
+
+[Service]
+ExecStart=/tmp/api
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
+```
+
+#### docker-compose.yml
+```yaml
+services:
+  local-vps-22:
+    image: atlekbai/local-vps:latest
+    container_name: local-vps-22
+    ports:
+      - "22:22"
+      - "80:80"
+      - "7070:7070"
+      - "8080:8080"
+      - "8888:8888"
+      - "9090:9090"
+    restart: always
+    command: "22"
+    volumes:
+      - "~/.ssh/id_rsa.pub:/root/.ssh/authorized_keys:ro"
+
+  local-vps-23:
+    image: atlekbai/local-vps:latest
+    container_name: local-vps-23
+    ports:
+      - "23:23"
+    restart: always
+    command: "23"
+    volumes:
+      - "~/.ssh/id_rsa.pub:/root/.ssh/authorized_keys:ro"
+
+  local-vps-24:
+    image: atlekbai/local-vps:latest
+    container_name: local-vps-24
+    ports:
+      - "24:24"
+    restart: always
+    command: "24"
+    volumes:
+      - "~/.ssh/id_rsa.pub:/root/.ssh/authorized_keys:ro"
+```
+
+```bash
+curl http://127.0.0.1:80
+curl http://127.0.0.1:80/profile
+```
